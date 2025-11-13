@@ -20,29 +20,26 @@ CUSTOM_MODEL_PATH = Path("runs/train/cctv_yolov8/weights/best.pt")
 
 # Load YOLO trained model
 try:
-    if CUSTOM_MODEL_PATH.exists():
-        # 1. Custom model को load करने का प्रयास
-        model = YOLO(str(CUSTOM_MODEL_PATH))
-        print(f"YOLO model '{CUSTOM_MODEL_PATH}' loaded successfully from local file.")
-    else:
-        # 2. अगर Custom model नहीं मिला, तो crash से बचने के लिए generic model का उपयोग करें।
-        # NOTE: If you want to use your custom model, ensure the 'runs' directory and 'best.pt' 
-        # are committed to your Git repository.
-        model = YOLO("yolov8n.pt") 
-        print(f"⚠️ WARNING: Custom model not found at {CUSTOM_MODEL_PATH}. Using generic 'yolov8n.pt' as fallback for stability.")
+    # 1. कस्टम मॉडल को सीधे load करने का प्रयास करें। (उपयोगकर्ता के अनुरोध के अनुसार)
+    # अगर यह फ़ाइल deployment environment में मौजूद नहीं होगी, तो YOLO library एक 'FileNotFoundError' देगी, 
+    # और server इस बिंदु पर क्रैश हो जाएगा।
+    model = YOLO(str(CUSTOM_MODEL_PATH))
+    print(f"✅ कस्टम YOLO मॉडल '{CUSTOM_MODEL_PATH}' सफलतापूर्वक लोड हो गया है।")
 
 except Exception as e:
-    # 3. Critical failure handler
-    print(f"CRITICAL ERROR: Failed to load any YOLO model: {e}")
-    # Dummy Model class definition to prevent app crash
+    # 2. Critical failure handler
+    print(f"❌ CRITICAL ERROR: कस्टम मॉडल लोड करने में विफल! सुनिश्चित करें कि 'runs/train/cctv_yolov8/weights/best.pt' फ़ाइल GitHub पर कमिट है। त्रुटि: {e}")
+    
+    # Dummy Model class definition to prevent app crash and allow root access for debugging
     class DummyModel:
         def predict(self, data, save=False, verbose=False):
             return []
         def __init__(self):
             # This is a dummy object, it needs the 'names' attribute for the prediction logic not to crash
-            self.names = {0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane'}
+            self.names = {0: 'DUMMY_MODEL_FAILED'}
             
     model = DummyModel()
+    print("⚠️ WARNING: मॉडल लोड न होने के कारण डमी मॉडल का उपयोग किया जा रहा है। AI प्रेडिक्शन काम नहीं करेगा।")
 
 
 # ==============================

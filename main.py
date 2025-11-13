@@ -11,7 +11,7 @@ app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
-MODEL_PATH = r"C:\Users\admin\Documents\project_root\runs\train\cctv_yolov8\weights\best.pt"
+MODEL_PATH =  Path("runs/train/cctv_yolov8/weights/best.pt")
 
 
 # Load YOLO trained model

@@ -1,11 +1,11 @@
-from fastapi import FastAPI, UploadFile, File, Form 
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from pathlib import Path
 import shutil
 from ultralytics import YOLO # YOLO library import
-import base64 
-import numpy as np 
-import cv2 
+import base64
+import numpy as np
+import cv2
 
 # ==============================
 # Setup
@@ -20,9 +20,7 @@ CUSTOM_MODEL_PATH = Path("runs/train/cctv_yolov8/weights/best.pt")
 
 # Load YOLO trained model
 try:
-    # 1. कस्टम मॉडल को सीधे load करने का प्रयास करें। (उपयोगकर्ता के अनुरोध के अनुसार)
-    # अगर यह फ़ाइल deployment environment में मौजूद नहीं होगी, तो YOLO library एक 'FileNotFoundError' देगी, 
-    # और server इस बिंदु पर क्रैश हो जाएगा।
+    # 1. कस्टम मॉडल को सीधे load करने का प्रयास करें। 
     model = YOLO(str(CUSTOM_MODEL_PATH))
     print(f"✅ कस्टम YOLO मॉडल '{CUSTOM_MODEL_PATH}' सफलतापूर्वक लोड हो गया है।")
 
@@ -74,42 +72,42 @@ video { margin-top:20px; max-width:80%; height:auto; border-radius: 10px; box-sh
 
 <script>
 async function uploadVideo() {
-    const fileInput = document.getElementById('videoFile');
-    const file = fileInput.files[0];
-    if (!file) { alert("Select a video first!"); return; }
+    const fileInput = document.getElementById('videoFile');
+    const file = fileInput.files[0];
+    if (!file) { alert("Select a video first!"); return; }
 
-    const videoPreview = document.getElementById('video-preview');
-    videoPreview.src = URL.createObjectURL(file);
+    const videoPreview = document.getElementById('video-preview');
+    videoPreview.src = URL.createObjectURL(file);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    const alertBox = document.getElementById('alert-box');
+    const formData = new FormData();
+    formData.append('file', file);
+    const alertBox = document.getElementById('alert-box');
     alertBox.className = '';
-    alertBox.innerText = "Processing video...";
+    alertBox.innerText = "Processing video...";
 
-    try {
-        const response = await fetch('/upload_video/', {
-            method: 'POST',
-            body: formData
-        });
+    try {
+        const response = await fetch('/upload_video/', {
+            method: 'POST',
+            body: formData
+        });
 
-        if (response.ok) {
-            const data = await response.json();
-            alertBox.innerText = data.alert_status; 
+        if (response.ok) {
+            const data = await response.json();
+            alertBox.innerText = data.alert_status; 
              if (data.alert_status.includes("ALERT")) {
                 alertBox.classList.add('alert-error');
              } else {
                 alertBox.classList.add('alert-safe');
              }
-        } else {
-            alertBox.innerText = "Upload failed! Status: " + response.status;
+        } else {
+            alertBox.innerText = "Upload failed! Status: " + response.status;
              alertBox.classList.add('alert-error');
-        }
-    } catch (error) {
-        alertBox.innerText = "Error connecting to server.";
+        }
+    } catch (error) {
+        alertBox.innerText = "Error connecting to server.";
         alertBox.classList.add('alert-error');
-        console.error(error);
-    }
+        console.error(error);
+    }
 }
 </script>
 </body>
@@ -121,31 +119,31 @@ async function uploadVideo() {
 # ==============================
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
-    return HTML_CONTENT
+    return HTML_CONTENT
 
 # 1. Video Upload Route 
 @app.post("/upload_video/")
 async def upload_video(file: UploadFile = File(...)):
-    file_path = UPLOAD_DIR / file.filename
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    file_path = UPLOAD_DIR / file.filename
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-    # Predict using YOLO 
-    results = model.predict(str(file_path), save=False)
+    # Predict using YOLO 
+    results = model.predict(str(file_path), save=False)
 
-    # Unique detected classes
-    detected_classes = set()
-    # Ensure model is not the DummyModel before accessing 'names'
+    # Unique detected classes
+    detected_classes = set()
+    # Ensure model is not the DummyModel before accessing 'names'
     if hasattr(model, 'names'):
         for r in results:
             detected_classes.update([model.names[int(cls)] for cls in r.boxes.cls])
 
-    if detected_classes:
-        alert_msg = f"ALERT! Detected: {', '.join(detected_classes)}"
-    else:
-        alert_msg = "Safe: No threat detected."
+    if detected_classes:
+        alert_msg = f"ALERT! Detected: {', '.join(detected_classes)}"
+    else:
+        alert_msg = "Safe: No threat detected."
 
-    return {"alert_status": alert_msg}
+    return {"alert_status": alert_msg}
 
 
 # 2. Frame Analysis Route (Uses Form/Column data)

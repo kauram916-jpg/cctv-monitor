@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import shutil
 from ultralytics import YOLO
@@ -8,16 +9,29 @@ from ultralytics import YOLO
 # Setup
 # ==============================
 app = FastAPI()
+
+# 🔥 CORS FIX (upload failed ka main reason yahi tha)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# ✅ FIX 1 : Correct Path class (Path not PATH)
-# ✅ FIX 2 : Use Linux-friendly forward slashes
+# Model path (FIXED)
 MODEL_PATH = Path("runs/train/cctv_yolov8/weights/best.pt")
 
-# Load YOLO trained model
-model = YOLO(str(MODEL_PATH))
+# Load Model
+try:
+    model = YOLO(str(MODEL_PATH))
+except Exception as e:
+    print("❌ Model Load Error:", e)
+    model = None
+
 
 # ==============================
 # Frontend HTML
@@ -63,12 +77,9 @@ async function uploadVideo() {
             body: formData
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            alertBox.innerText = data.alert;
-        } else {
-            alertBox.innerText = "Upload failed!";
-        }
+        const data = await response.json();
+        alertBox.innerText = data.alert || "Upload failed!";
+
     } catch (error) {
         alertBox.innerText = "Error connecting to server.";
         console.error(error);
@@ -78,6 +89,7 @@ async function uploadVideo() {
 </body>
 </html>
 """
+
 
 # ==============================
 # Routes
@@ -89,14 +101,25 @@ async def serve_index():
 
 @app.post("/upload_video/")
 async def upload_video(file: UploadFile = File(...)):
+
+    # Handle model load error
+    if model is None:
+        return {"alert": "❌ Model not loaded. Check server logs."}
+
     file_path = UPLOAD_DIR / file.filename
 
     # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        return {"alert": f"❌ File save error: {e}"}
 
-    # Predict (no saving of output images)
-    results = model.predict(str(file_path), save=False)
+    # Run prediction
+    try:
+        results = model.predict(str(file_path), save=False)
+    except Exception as e:
+        return {"alert": f"❌ Prediction error: {e}"}
 
     detected_classes = set()
     for r in results:
@@ -112,7 +135,6 @@ async def upload_video(file: UploadFile = File(...)):
 
 
 # ==============================
-# Run command (local)
+# Run (Local)
 # ==============================
 # uvicorn main:app --reload
-

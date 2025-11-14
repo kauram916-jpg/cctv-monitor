@@ -12,8 +12,9 @@ BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Change this path to your trained YOLO model path
-MODEL_PATH = PATH("runs\train\cctv_yolov8\weights\best.pt")
+# ✅ FIX 1 : Correct Path class (Path not PATH)
+# ✅ FIX 2 : Use Linux-friendly forward slashes
+MODEL_PATH = Path("runs/train/cctv_yolov8/weights/best.pt")
 
 # Load YOLO trained model
 model = YOLO(str(MODEL_PATH))
@@ -85,19 +86,22 @@ async function uploadVideo() {
 async def serve_index():
     return HTML_CONTENT
 
+
 @app.post("/upload_video/")
 async def upload_video(file: UploadFile = File(...)):
     file_path = UPLOAD_DIR / file.filename
+
+    # Save file
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Predict using YOLO (score save nahi kar rahe)
+    # Predict (no saving of output images)
     results = model.predict(str(file_path), save=False)
 
-    # Unique detected classes
     detected_classes = set()
     for r in results:
-        detected_classes.update([r.names[int(cls)] for cls in r.boxes.cls])
+        for cls in r.boxes.cls:
+            detected_classes.add(r.names[int(cls)])
 
     if detected_classes:
         alert_msg = f"ALERT! Detected: {', '.join(detected_classes)}"
@@ -108,6 +112,7 @@ async def upload_video(file: UploadFile = File(...)):
 
 
 # ==============================
-# Run command (terminal me)
+# Run command (local)
 # ==============================
 # uvicorn main:app --reload
+

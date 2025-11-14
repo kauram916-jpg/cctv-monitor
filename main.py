@@ -1,16 +1,13 @@
 from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
-import shutil
 from ultralytics import YOLO
+import shutil
+import time
 
-# ==============================
-# Setup
-# ==============================
 app = FastAPI()
 
-# 🔥 CORS FIX (upload failed ka main reason yahi tha)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,122 +16,71 @@ app.add_middleware(
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "uploads"
+UPLOAD_DIR = BASE_DIR / "frames"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Model path (FIXED)
-MODEL_PATH = Path("runs/train/cctv_yolov8/weights/best.pt")
-
 # Load Model
+MODEL_PATH = Path("runs/train/cctv_yolov8/weights/best.pt")
 try:
     model = YOLO(str(MODEL_PATH))
+    print("✅ YOLO Model Loaded Successfully")
 except Exception as e:
     print("❌ Model Load Error:", e)
     model = None
 
-
-# ==============================
-# Frontend HTML
-# ==============================
-HTML_CONTENT = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CCTV Video Alert</title>
-<style>
-body { font-family: Arial; text-align:center; margin-top:50px; }
-input, button { margin:10px; padding:10px; font-size:16px; }
-#alert-box { margin-top:20px; font-size:18px; font-weight:bold; color:red; }
-video { margin-top:20px; max-width:80%; height:auto; }
-</style>
-</head>
-<body>
-<h1>CCTV Video Upload & Alert Test</h1>
-<input type="file" id="videoFile" accept="video/*"><br>
-<button onclick="uploadVideo()">Upload & Check</button>
-<div id="alert-box"></div>
-<video id="video-preview" controls></video>
-
-<script>
-async function uploadVideo() {
-    const fileInput = document.getElementById('videoFile');
-    const file = fileInput.files[0];
-    if (!file) { alert("Select a video first!"); return; }
-
-    const videoPreview = document.getElementById('video-preview');
-    videoPreview.src = URL.createObjectURL(file);
-
-    const formData = new FormData();
-    formData.append('file', file);
-    const alertBox = document.getElementById('alert-box');
-    alertBox.innerText = "Processing video...";
-
-    try {
-        const response = await fetch('/upload_video/', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-        alertBox.innerText = data.alert || "Upload failed!";
-
-    } catch (error) {
-        alertBox.innerText = "Error connecting to server.";
-        console.error(error);
-    }
-}
-</script>
-</body>
-</html>
-"""
+# ============================
+# GLOBAL COOLDOWN VARIABLES
+# ============================
+cooldown_active = False
+last_detection_time = 0
+COOLDOWN_DURATION = 120   # 2 minutes
 
 
-# ==============================
-# Routes
-# ==============================
-@app.get("/", response_class=HTMLResponse)
-async def serve_index():
-    return HTML_CONTENT
+@app.post("/predict/")
+async def predict_frame(frame: UploadFile = File(...)):
+    global cooldown_active, last_detection_time
 
-
-@app.post("/upload_video/")
-async def upload_video(file: UploadFile = File(...)):
-
-    # Handle model load error
+    # 1️⃣ Check model available
     if model is None:
-        return {"alert": "❌ Model not loaded. Check server logs."}
+        return {"status": "MODEL_ERROR"}
 
-    file_path = UPLOAD_DIR / file.filename
+    # 2️⃣ Check cooldown
+    if cooldown_active:
+        if time.time() - last_detection_time < COOLDOWN_DURATION:
+            return {"status": "COOLDOWN_ACTIVE"}
+        else:
+            cooldown_active = False  # Cooldown reset
 
-    # Save file
+    # 3️⃣ Save uploaded image temporarily
+    frame_path = UPLOAD_DIR / frame.filename
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        return {"alert": f"❌ File save error: {e}"}
+        with open(frame_path, "wb") as buffer:
+            shutil.copyfileobj(frame.file, buffer)
+    except:
+        return {"status": "FILE_SAVE_ERROR"}
 
-    # Run prediction
+    # 4️⃣ Run YOLO on image
     try:
-        results = model.predict(str(file_path), save=False)
+        results = model.predict(str(frame_path), save=False)
     except Exception as e:
-        return {"alert": f"❌ Prediction error: {e}"}
+        print("Prediction Error:", e)
+        return {"status": "PREDICTION_ERROR"}
 
+    # 5️⃣ Extract detected classes
     detected_classes = set()
     for r in results:
         for cls in r.boxes.cls:
             detected_classes.add(r.names[int(cls)])
 
+    # 6️⃣ If any object detected → ALERT + Cooldown on
     if detected_classes:
-        alert_msg = f"ALERT! Detected: {', '.join(detected_classes)}"
-    else:
-        alert_msg = "No threat detected."
+        cooldown_active = True
+        last_detection_time = time.time()
 
-    return {"alert": alert_msg}
+        return {
+            "status": "DETECTED",
+            "objects": list(detected_classes)
+        }
 
-
-# ==============================
-# Run (Local)
-# ==============================
-# uvicorn main:app --reload
+    # 7️⃣ No detection
+    return {"status": "SAFE"}
